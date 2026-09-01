@@ -1,0 +1,12 @@
+{
+  "name": "gke-node-microservice",
+  "version": "1.0.0",
+  "description": "Node.js microservice for GKE hands-on lab (GET/PUT API)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

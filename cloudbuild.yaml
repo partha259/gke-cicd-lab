@@ -1,0 +1,60 @@
+# cloudbuild.yaml
+# This file defines the CI/CD pipeline. Cloud Build reads this automatically
+# every time it's triggered (e.g. on a git push) and runs the steps in order.
+
+steps:
+  # Step 1: Build the Docker image, tagged two ways:
+  #   - a unique tag per commit (SHORT_SHA) so every build is traceable
+  #   - "latest" for convenience when browsing the registry
+  - id: 'Build image'
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:latest'
+      - '.'
+
+  # Step 2: Push both tags to Artifact Registry
+  - id: 'Push image'
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}'
+
+  # Step 3: Deploy to GKE.
+  # This builder auto-authenticates to the cluster named in the env vars below,
+  # then we swap the placeholder image name for the real one we just pushed
+  # and apply the manifests.
+  - id: 'Deploy to GKE'
+    name: 'gcr.io/cloud-builders/kubectl'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -e
+        sed -i "s|IMAGE_PLACEHOLDER|${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}|" k8s/deployment.yaml
+        kubectl apply -f k8s/deployment.yaml
+        kubectl apply -f k8s/service.yaml
+        kubectl rollout status deployment/node-microservice --timeout=180s
+    env:
+      - 'CLOUDSDK_COMPUTE_REGION=${_REGION}'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+
+# Images Cloud Build should record as build artifacts
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:${SHORT_SHA}'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:latest'
+
+# Default values — the README shows how to override these when you create
+# the trigger, so you don't have to edit this file by hand.
+substitutions:
+  _REGION: us-central1
+  _REPO_NAME: node-microservice-repo
+  _IMAGE_NAME: node-microservice
+  _CLUSTER_NAME: node-microservice-cluster
+
+options:
+  logging: CLOUD_LOGGING_ONLY
